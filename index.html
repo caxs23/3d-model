@@ -27,11 +27,13 @@
 
         #score-board { 
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%); 
-            background: rgba(255, 255, 255, 0.9); padding: 15px 25px; border-radius: 15px; border: 2px solid #ddd;
-            display: flex; gap: 30px; font-size: 1.2rem; color: #333; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            background: rgba(255, 255, 255, 0.9); padding: 12px 30px; border-radius: 15px; border: 2px solid #ddd;
+            display: flex; gap: 40px; font-size: 1.1rem; color: #333; box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            min-width: 320px; justify-content: space-around; white-space: nowrap;
         }
-        .score-item { display: flex; flex-direction: column; align-items: center; }
-        .score-val { font-weight: bold; color: #ff4757; font-size: 1.4rem; }
+        .score-item { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+        .score-label { font-size: 0.9rem; color: #666; margin-bottom: 4px; font-weight: 600; }
+        .score-val { font-weight: bold; color: #ff4757; font-size: 1.5rem; line-height: 1; }
 
         #message-box { 
             position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); 
@@ -67,9 +69,18 @@
         </div>
 
         <div id="score-board" style="display: none;">
-            <div class="score-item">프레임<span class="score-val" id="frame-num">1</span></div>
-            <div class="score-item">투구<span class="score-val" id="shot-num">1</span></div>
-            <div class="score-item">현재 점수<span class="score-val" id="total-score">0</span></div>
+            <div class="score-item">
+                <span class="score-label">프레임</span>
+                <span class="score-val" id="frame-num">1</span>
+            </div>
+            <div class="score-item">
+                <span class="score-label">투구</span>
+                <span class="score-val" id="shot-num">1</span>
+            </div>
+            <div class="score-item">
+                <span class="score-label">현재 점수</span>
+                <span class="score-val" id="total-score">0</span>
+            </div>
         </div>
 
         <div id="message-box">STRIKE!</div>
@@ -113,9 +124,18 @@
             world = new CANNON.World();
             world.gravity.set(0, -9.82, 0);
 
+            // 물리 재질 설정 (튕김 효과)
+            const wallPhysMaterial = new CANNON.Material("wallMaterial");
+            const ballPhysMaterial = new CANNON.Material("ballMaterial");
+            const contactMaterial = new CANNON.ContactMaterial(ballPhysMaterial, wallPhysMaterial, {
+                friction: 0.1,
+                restitution: 0.7 // 벽에 부딪혔을 때 튕겨나오는 정도
+            });
+            world.addContactMaterial(contactMaterial);
+
             createLights();
-            createEnvironment();
-            createBall();
+            createEnvironment(wallPhysMaterial);
+            createBall(ballPhysMaterial);
             loadPinModel();
 
             window.addEventListener('resize', onWindowResize);
@@ -136,34 +156,55 @@
             scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.5));
         }
 
-        function createEnvironment() {
+        function createEnvironment(wallMaterial) {
+            // Lane: 볼링장 나무 바닥 색상 (Wood Texture look)
             const laneGeo = new THREE.BoxGeometry(6, 0.2, 40);
-            const laneMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+            const laneMat = new THREE.MeshStandardMaterial({ 
+                color: 0xd2a679, // 나무색 (Light brown)
+                roughness: 0.1, 
+                metalness: 0.05 
+            });
             const lane = new THREE.Mesh(laneGeo, laneMat);
             lane.position.set(0, -0.1, -15);
             lane.receiveShadow = true;
             scene.add(lane);
 
+            // 바닥 물리
             const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(3, 0.1, 20)) });
             groundBody.position.set(0, -0.1, -15);
             world.addBody(groundBody);
 
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0xced4da });
-            const wallL = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 40), wallMat);
-            wallL.position.set(-3.5, 0.5, -15);
+            // 옆 벽 (가터 방지 및 튕김용)
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+            
+            // 왼쪽 벽
+            const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 40), wallMat);
+            wallL.position.set(-3.25, 0.5, -15);
             scene.add(wallL);
-            const wallR = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 40), wallMat);
-            wallR.position.set(3.5, 0.5, -15);
+            const wallLBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.25, 0.5, 20)), material: wallMaterial });
+            wallLBody.position.set(-3.25, 0.5, -15);
+            world.addBody(wallLBody);
+
+            // 오른쪽 벽
+            const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 40), wallMat);
+            wallR.position.set(3.25, 0.5, -15);
             scene.add(wallR);
+            const wallRBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(0.25, 0.5, 20)), material: wallMaterial });
+            wallRBody.position.set(3.25, 0.5, -15);
+            world.addBody(wallRBody);
         }
 
-        function createBall() {
+        function createBall(material) {
             const ballRadius = 0.5;
             ball = new THREE.Mesh(new THREE.SphereGeometry(ballRadius, 32, 32), new THREE.MeshStandardMaterial({ color: 0xff4757, metalness: 0.6, roughness: 0.1 }));
             ball.castShadow = true;
             scene.add(ball);
 
-            ballBody = new CANNON.Body({ mass: 6, shape: new CANNON.Sphere(ballRadius) });
+            ballBody = new CANNON.Body({ 
+                mass: 6, 
+                shape: new CANNON.Sphere(ballRadius),
+                material: material 
+            });
             world.addBody(ballBody);
             resetBall();
         }
@@ -223,7 +264,7 @@
                     pin.visible = true;
                 } else {
                     pin.visible = false;
-                    pinBodies[i].position.set(0, -100, 0); // 맵 밖으로 이동
+                    pinBodies[i].position.set(0, -100, 0); 
                 }
             });
         }
@@ -293,7 +334,6 @@
 
             setTimeout(() => {
                 if (pinsStandingCount === 0 || shotCount === 2) {
-                    // 프레임 종료
                     if (frameCount < 3) {
                         frameCount++;
                         shotCount = 1;
@@ -303,7 +343,6 @@
                         endGame();
                     }
                 } else {
-                    // 프레임 내 2번째 투구 준비
                     shotCount = 2;
                     updateUI();
                 }
@@ -338,7 +377,7 @@
             ballBody.position.set(0, 0.5, 4);
             ballBody.quaternion.set(0,0,0,1);
             resetCamera();
-            positionPins(); // 쓰러진 핀 제거 및 남은 핀 정렬
+            positionPins(); 
         }
 
         function endGame() {
