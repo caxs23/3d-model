@@ -94,7 +94,7 @@
             pbr: 'https://raw.githubusercontent.com/caxs23/3d-model/main/texture_pbr.png'
         };
 
-        const DIALOGUES = ["으악!", "살려주세요", "억", "아이고", "퇴근하고 싶어", "선생님!", "꺅", "도망쳐!", "휴가 보내줘!", "오버타임 싫어!"];
+        const DIALOGUES = ["으악!", "살려주세요", "억", "아이고", "퇴근하고 싶어", "선생님!", "꺅", "도망쳐!""];
 
         let scene, camera, renderer, world;
         let ball, ballBody, pins = [], pinBodies = [];
@@ -370,7 +370,7 @@
         function showDialogue(pin) {
             // 대사가 너무 자주 겹쳐 나오지 않도록 쿨타임(0.5초) 적용
             const now = Date.now();
-            if (now - pin.userData.lastDialogueTime < 500) return;
+            if (now - pin.userData.lastDialogueTime < 1500) return;
             
             const el = pin.userData.dialogueEl;
             el.innerText = DIALOGUES[Math.floor(Math.random() * DIALOGUES.length)];
