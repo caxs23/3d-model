@@ -29,7 +29,7 @@
         .btn.secondary { background: #747d8c; box-shadow: 0 4px 15px rgba(116,125,140,0.4); font-size: 1.2rem; }
         .btn:active { transform: scale(0.95); }
 
-        /* 오프닝 컨테이너 - 높이 부담 줄임 */
+        /* 오프닝 컨테이너 */
         #opening-container {
             position: absolute; width: 100%; height: 100%; background: #1a1a1a;
             display: none; pointer-events: auto; z-index: 200;
@@ -91,7 +91,6 @@
 <body>
 
     <div id="ui-layer">
-        <!-- 시작 화면 -->
         <div id="start-screen">
             <div class="title">💉 간호부 볼링대회</div>
             <div class="instructions">
@@ -105,13 +104,12 @@
             </div>
         </div>
 
-        <!-- 오프닝 컨테이너 -->
         <div id="opening-container">
             <div id="scene-1" class="opening-scene" style="background-image: url('https://raw.githubusercontent.com/caxs23/3d-model/main/opening1.png');">
                 <div class="opening-text-box">오늘도 즐거운 출근길! 어떤 일을 하게 될까?</div>
             </div>
             <div id="scene-2" class="opening-scene" style="background-image: url('https://raw.githubusercontent.com/caxs23/3d-model/main/opening2.png');">
-                <div class="opening-text-box">인간 놈들.. 그동안 우리를 신나게 넘어뜨렸겠다. 복수다!</div>
+                <div class="opening-text-box">그동안 우리를 신나게 넘어뜨렸겠다. 지금이다!</div>
             </div>
             <div id="scene-3" class="opening-scene" style="background-image: url('https://raw.githubusercontent.com/caxs23/3d-model/main/opening3.png');">
                 <div class="opening-text-box">으아악! 이게 뭐야!</div>
@@ -122,7 +120,6 @@
             <button id="opening-next-btn" class="btn" onclick="nextOpeningScene()">계속</button>
         </div>
 
-        <!-- 인게임 UI -->
         <div id="score-board" style="display: none;">
             <div class="score-item">
                 <span class="score-label">프레임</span>
@@ -142,7 +139,6 @@
     </div>
 
     <script>
-        // --- Constants & Variables ---
         const ASSETS = {
             obj: 'https://raw.githubusercontent.com/caxs23/3d-model/main/base.obj',
             diffuse: 'https://raw.githubusercontent.com/caxs23/3d-model/main/texture_diffuse.png',
@@ -169,7 +165,6 @@
         const strikeSound = new Audio(ASSETS.strikeSound);
         const throwSound = new Audio(ASSETS.throwSound);
 
-        // --- Opening Logic ---
         let currentOpeningScene = 0;
         const totalOpeningScenes = 4;
 
@@ -182,23 +177,13 @@
 
         function nextOpeningScene() {
             currentOpeningScene++;
-            
             if (currentOpeningScene <= totalOpeningScenes) {
-                if (currentOpeningScene > 1) {
-                    document.getElementById(`scene-${currentOpeningScene - 1}`).classList.remove('active');
-                }
-                
+                if (currentOpeningScene > 1) document.getElementById(`scene-${currentOpeningScene - 1}`).classList.remove('active');
                 const activeScene = document.getElementById(`scene-${currentOpeningScene}`);
                 activeScene.classList.add('active');
-                
                 const nextBtn = document.getElementById('opening-next-btn');
                 nextBtn.style.display = 'block';
-                
-                if (currentOpeningScene === totalOpeningScenes) {
-                    nextBtn.innerText = "진행하기";
-                } else {
-                    nextBtn.innerText = "계속";
-                }
+                nextBtn.innerText = (currentOpeningScene === totalOpeningScenes) ? "진행하기" : "계속";
             } else {
                 finishOpening();
             }
@@ -219,7 +204,6 @@
             resetFullPins();
         }
 
-        // --- Core Game Logic ---
         function init() {
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0xe0e6ed); 
@@ -240,13 +224,8 @@
             const ballPhysMaterial = new CANNON.Material("ballMaterial");
             const pinPhysMaterial = new CANNON.Material("pinMaterial");
 
-            const wallContact = new CANNON.ContactMaterial(ballPhysMaterial, wallPhysMaterial, {
-                friction: 0.1, restitution: 0.7 
-            });
-            const pinContact = new CANNON.ContactMaterial(ballPhysMaterial, pinPhysMaterial, {
-                friction: 0.3, restitution: 0.3
-            });
-            
+            const wallContact = new CANNON.ContactMaterial(ballPhysMaterial, wallPhysMaterial, { friction: 0.1, restitution: 0.7 });
+            const pinContact = new CANNON.ContactMaterial(ballPhysMaterial, pinPhysMaterial, { friction: 0.3, restitution: 0.3 });
             world.addContactMaterial(wallContact);
             world.addContactMaterial(pinContact);
 
@@ -272,13 +251,15 @@
         }
 
         function createEnvironment(wallMaterial) {
+            // Lane (시각적 바닥 높이: 0)
             const laneGeo = new THREE.BoxGeometry(6, 0.2, 40);
             const laneMat = new THREE.MeshStandardMaterial({ color: 0xd2a679, roughness: 0.1, metalness: 0.05 });
             const lane = new THREE.Mesh(laneGeo, laneMat);
-            lane.position.set(0, -0.1, -15);
+            lane.position.set(0, -0.1, -15); // 상단 표면이 0에 오도록
             lane.receiveShadow = true;
             scene.add(lane);
 
+            // Physics Ground (y=0 지점)
             const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(3, 0.1, 20)) });
             groundBody.position.set(0, -0.1, -15);
             world.addBody(groundBody);
@@ -337,7 +318,14 @@
                     scene.add(pinInstance);
                     pins.push(pinInstance);
 
-                    const pinBody = new CANNON.Body({ mass: 0.8, shape: new CANNON.Box(new CANNON.Vec3(0.3, 1.2, 0.3)), material: material });
+                    // 핀 물리 바디: 높이를 줄이고 무게중심 최적화
+                    const pinHeight = 1.2;
+                    const pinBody = new CANNON.Body({ 
+                        mass: 0.8, 
+                        shape: new CANNON.Box(new CANNON.Vec3(0.2, pinHeight / 2, 0.2)), 
+                        material: material 
+                    });
+                    
                     pinBody.addEventListener("collide", (e) => {
                         if (!isThrowing) return;
                         const impactVelocity = e.contact.getImpactVelocityAlongNormal();
@@ -353,6 +341,7 @@
                     const el = document.createElement('div');
                     el.className = 'dialogue';
                     document.body.appendChild(el);
+                    // pinHeight/2 지점이 바닥에서 떠있으므로 실제 Y값은 0.6 (바닥 0에서 절반 높이)
                     pinInstance.userData = { dialogueEl: el, isHit: false, initX: x, initZ: z, lastDialogueTime: 0 };
                 }
             }
@@ -361,14 +350,17 @@
 
         function positionPins() {
             pins.forEach((pin, i) => {
+                const body = pinBodies[i];
                 if (!pin.userData.isHit) {
-                    const body = pinBodies[i];
-                    body.velocity.set(0,0,0); body.angularVelocity.set(0,0,0);
-                    body.position.set(pin.userData.initX, 1.2, pin.userData.initZ);
+                    body.velocity.set(0,0,0); 
+                    body.angularVelocity.set(0,0,0);
+                    // y좌표를 0.6으로 설정하여 핀의 밑면이 0에 닿도록 함
+                    body.position.set(pin.userData.initX, 0.6, pin.userData.initZ);
                     body.quaternion.set(0,0,0,1);
                     pin.visible = true;
                 } else {
-                    pin.visible = false; pinBodies[i].position.set(0, -100, 0); 
+                    pin.visible = false; 
+                    body.position.set(0, -100, 0); 
                 }
             });
         }
@@ -411,7 +403,8 @@
                     const body = pinBodies[idx];
                     const up = new CANNON.Vec3(0, 1, 0);
                     const pinUp = body.quaternion.vmult(new CANNON.Vec3(0, 1, 0));
-                    if (up.dot(pinUp) < 0.75 || body.position.y < 0.5) {
+                    // 핀이 쓰러졌거나 레인 밖(y < 0.3)으로 나갔을 때 처리
+                    if (up.dot(pinUp) < 0.75 || body.position.y < 0.3) {
                         hitThisTime++; pin.userData.isHit = true;
                     }
                 }
@@ -431,12 +424,9 @@
 
             setTimeout(() => {
                 if (pinsStandingCount === 0 || shotCount === 2) {
-                    if (frameCount < 3) {
-                        frameCount++; shotCount = 1; resetFullPins(); updateUI();
-                    } else endGame();
-                } else {
-                    shotCount = 2; updateUI();
-                }
+                    if (frameCount < 3) { frameCount++; shotCount = 1; resetFullPins(); updateUI(); } 
+                    else endGame();
+                } else { shotCount = 2; updateUI(); }
                 resetBall();
                 isThrowing = false;
             }, 2000);
@@ -476,14 +466,8 @@
             document.getElementById('start-screen').style.display = 'flex';
             document.querySelector('.title').innerText = "대회 종료!";
             document.querySelector('.instructions').innerHTML = `최종 점수: <strong>${totalScore}점</strong><br>수고하셨습니다!`;
-            
-            // 버튼들 초기 상태로 복구
             const btnGroup = document.querySelector('.btn-group');
-            btnGroup.innerHTML = `
-                <button class="btn" onclick="startOpening()">다시 하기 (오프닝 포함)</button>
-                <button class="btn secondary" onclick="startGameDirectly()">컷신 없이 바로 시작</button>
-            `;
-            
+            btnGroup.innerHTML = `<button class="btn" onclick="startOpening()">다시 하기 (오프닝 포함)</button><button class="btn secondary" onclick="startGameDirectly()">컷신 없이 바로 시작</button>`;
             frameCount = 1; shotCount = 1; totalScore = 0;
             updateUI(); resetFullPins(); resetBall();
         }
@@ -514,10 +498,12 @@
 
                 pins.forEach((pin, i) => {
                     pin.position.copy(pinBodies[i].position);
+                    // 시각적 모델을 물리 바디 중심에서 살짝 아래로 내려서 발바닥이 바닥에 닿게 조정
+                    pin.position.y -= 0.6; 
                     pin.quaternion.copy(pinBodies[i].quaternion);
                     if (pin.userData.dialogueEl.style.display === 'block') {
                         const vector = pin.position.clone();
-                        vector.y += 1.5; vector.project(camera);
+                        vector.y += 2.0; vector.project(camera);
                         const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
                         const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
                         pin.userData.dialogueEl.style.left = `${x}px`;
