@@ -106,8 +106,7 @@
             scene.fog = new THREE.Fog(0xe0e6ed, 20, 60);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 4, 12);
-            camera.lookAt(0, 0, -5);
+            resetCamera();
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -195,7 +194,6 @@
 
             const shape = new CANNON.Sphere(ballRadius);
             ballBody = new CANNON.Body({ mass: 6, shape: shape });
-            // 공이 시작 위치를 레인 위(z = 4)로 당겨서 허공 추락 방지
             ballBody.position.set(0, 0.5, 4);
             world.addBody(ballBody);
             
@@ -238,11 +236,14 @@
                         scene.add(pinInstance);
                         pins.push(pinInstance);
 
+                        // 핀의 질량을 2.0에서 0.8로 줄여 더 가볍게 잘 넘어지도록 수정
                         const pinBody = new CANNON.Body({
-                            mass: 2.0,
+                            mass: 0.8, 
                             shape: new CANNON.Box(new CANNON.Vec3(0.3, 1.2, 0.3))
                         });
                         pinBody.position.set(x, 1.2, z);
+                        // 마찰력을 조절하여 더 잘 미끄러지게 할 수 있음
+                        pinBody.material = new CANNON.Material({ friction: 0.1 });
                         world.addBody(pinBody);
                         pinBodies.push(pinBody);
 
@@ -266,7 +267,6 @@
             gameActive = true;
         }
 
-        // Generic Start Handler
         function startAction(x, y) {
             if (!gameActive || isThrowing) return;
             swipeStart.x = x;
@@ -274,7 +274,6 @@
             swipeStart.time = Date.now();
         }
 
-        // Generic End Handler
         function endAction(x, y) {
             if (!gameActive || isThrowing) return;
             const deltaX = x - swipeStart.x;
@@ -288,11 +287,8 @@
             }
         }
 
-        // Touch Listeners
         function onTouchStart(e) { startAction(e.touches[0].clientX, e.touches[0].clientY); }
         function onTouchEnd(e) { endAction(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }
-
-        // Mouse Listeners
         function onMouseDown(e) { isMouseDown = true; startAction(e.clientX, e.clientY); }
         function onMouseUp(e) { if(isMouseDown) { isMouseDown = false; endAction(e.clientX, e.clientY); } }
 
@@ -351,13 +347,17 @@
             setTimeout(() => msg.style.opacity = '0', 2000);
         }
 
+        function resetCamera() {
+            camera.position.set(0, 4, 12);
+            camera.lookAt(0, 0, -5);
+        }
+
         function resetBall() {
-            // 초기 위치를 레인 안쪽인 z = 4로 설정
             ballBody.position.set(0, 0.5, 4);
             ballBody.velocity.set(0,0,0);
             ballBody.angularVelocity.set(0,0,0);
             ballBody.quaternion.set(0,0,0,1);
-            camera.position.set(0, 4, 12);
+            resetCamera(); // 확실하게 카메라 리셋 호출
         }
 
         function endGame() {
@@ -375,6 +375,7 @@
                 b.angularVelocity.set(0,0,0);
                 b.quaternion.set(0,0,0,1);
             });
+            resetBall();
         }
 
         function onWindowResize() {
@@ -393,9 +394,11 @@
                 ball.position.copy(ballBody.position);
                 ball.quaternion.copy(ballBody.quaternion);
 
+                // 투구 중일 때만 카메라가 공을 따라가도록 설정
                 if (isThrowing && ball.position.z > -25) {
                     const targetZ = ball.position.z + 6;
                     const targetX = ball.position.x * 0.5;
+                    // 부드러운 카메라 이동
                     camera.position.z += (targetZ - camera.position.z) * 0.1;
                     camera.position.x += (targetX - camera.position.x) * 0.1;
                     camera.lookAt(ball.position.x, 1, ball.position.z - 5);
