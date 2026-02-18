@@ -251,13 +251,24 @@
         }
 
         function createEnvironment(wallMaterial) {
-            // Lane (시각적 바닥 높이: 0)
+            // Lane (시각적 바닥)
             const laneGeo = new THREE.BoxGeometry(6, 0.2, 40);
-            const laneMat = new THREE.MeshStandardMaterial({ color: 0xd2a679, roughness: 0.1, metalness: 0.05 });
+            const laneMat = new THREE.MeshStandardMaterial({ color: 0xd2a679, roughness: 0.2, metalness: 0.05 });
             const lane = new THREE.Mesh(laneGeo, laneMat);
-            lane.position.set(0, -0.1, -15); // 상단 표면이 0에 오도록
+            lane.position.set(0, -0.1, -15);
             lane.receiveShadow = true;
             scene.add(lane);
+
+            // 나무 판 가이드 라인 (어두운 회색 얇은 줄)
+            const plankWidth = 0.5;
+            const lineMat = new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.4 });
+            for (let x = -2.5; x <= 2.5; x += plankWidth) {
+                const lineGeo = new THREE.PlaneGeometry(0.02, 40);
+                const line = new THREE.Mesh(lineGeo, lineMat);
+                line.rotation.x = -Math.PI / 2;
+                line.position.set(x, 0.005, -15); // 레인 바로 위에 살짝 띄움
+                scene.add(line);
+            }
 
             // Physics Ground (y=0 지점)
             const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(3, 0.1, 20)) });
@@ -282,8 +293,38 @@
 
         function createBall(material) {
             const ballRadius = 0.5;
-            ball = new THREE.Mesh(new THREE.SphereGeometry(ballRadius, 32, 32), new THREE.MeshStandardMaterial({ color: 0xff4757, metalness: 0.6, roughness: 0.1 }));
-            ball.castShadow = true;
+            ball = new THREE.Group();
+
+            // Ball main body
+            const sphere = new THREE.Mesh(
+                new THREE.SphereGeometry(ballRadius, 32, 32), 
+                new THREE.MeshStandardMaterial({ color: 0xff4757, metalness: 0.6, roughness: 0.1 })
+            );
+            sphere.castShadow = true;
+            ball.add(sphere);
+
+            // 손가락 구멍: 얇은 실린더로 표현 (안으로 들어간 느낌)
+            // CylinderGeometry(radiusTop, radiusBottom, height, radialSegments)
+            const holeGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.05, 16);
+            const holeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            
+            const holes = [
+                { x: 0, y: 0.45, z: 0.15, rx: 0.4 },
+                { x: 0.15, y: 0.43, z: 0.05, rx: 0.4, ry: 0.3 },
+                { x: -0.15, y: 0.43, z: 0.05, rx: 0.4, ry: -0.3 }
+            ];
+
+            holes.forEach(data => {
+                const hole = new THREE.Mesh(holeGeo, holeMat);
+                hole.position.set(data.x, data.y, data.z);
+                
+                // 구체의 표면 법선 방향에 맞춰 회전
+                if (data.rx) hole.rotation.x = data.rx;
+                if (data.ry) hole.rotation.z = data.ry;
+                
+                ball.add(hole);
+            });
+
             scene.add(ball);
 
             ballBody = new CANNON.Body({ mass: 6, shape: new CANNON.Sphere(ballRadius), material: material });
@@ -305,7 +346,6 @@
         }
 
         function setupPins(model, material) {
-            // 핀 모델이 1.5배 커졌으므로 간격도 비례해서 넓힘 (1.0 -> 1.3)
             const spacing = 1.3;
             const offsetZ = -22;
             const rows = 4;
@@ -315,16 +355,13 @@
                     const pinInstance = model.clone();
                     const x = (j - i * 0.5) * spacing;
                     const z = offsetZ - i * spacing;
-                    // 모델 스케일 1.5배 상향 (0.7 -> 1.05)
                     pinInstance.scale.set(1.05, 1.05, 1.05);
                     scene.add(pinInstance);
                     pins.push(pinInstance);
 
-                    // 핀 물리 바디: 높이를 모델 크기에 맞춰 상향 (1.2 -> 1.8)
                     const pinHeight = 1.8;
                     const pinBody = new CANNON.Body({ 
                         mass: 0.8, 
-                        // 박스 너비도 상향 (0.2 -> 0.3)
                         shape: new CANNON.Box(new CANNON.Vec3(0.3, pinHeight / 2, 0.3)), 
                         material: material 
                     });
@@ -345,7 +382,6 @@
                     el.className = 'dialogue';
                     document.body.appendChild(el);
                     
-                    // pinHeight/2 지점이 바닥에서 떠있으므로 실제 Y값은 0.9 (바닥 0에서 절반 높이)
                     pinInstance.userData = { dialogueEl: el, isHit: false, initX: x, initZ: z, lastDialogueTime: 0, halfHeight: pinHeight / 2 };
                 }
             }
@@ -358,7 +394,6 @@
                 if (!pin.userData.isHit) {
                     body.velocity.set(0,0,0); 
                     body.angularVelocity.set(0,0,0);
-                    // 바닥 접촉을 위해 Y좌표를 핀 절반 높이로 설정
                     body.position.set(pin.userData.initX, pin.userData.halfHeight, pin.userData.initZ);
                     body.quaternion.set(0,0,0,1);
                     pin.visible = true;
@@ -407,7 +442,6 @@
                     const body = pinBodies[idx];
                     const up = new CANNON.Vec3(0, 1, 0);
                     const pinUp = body.quaternion.vmult(new CANNON.Vec3(0, 1, 0));
-                    // 핀이 쓰러졌거나 레인 밖(y < 0.4)으로 나갔을 때 처리 (크기가 커졌으므로 기준 높이 상향)
                     if (up.dot(pinUp) < 0.75 || body.position.y < (pin.userData.halfHeight * 0.6)) {
                         hitThisTime++; pin.userData.isHit = true;
                     }
@@ -502,12 +536,11 @@
 
                 pins.forEach((pin, i) => {
                     pin.position.copy(pinBodies[i].position);
-                    // 시각적 모델을 물리 바디 중심에서 하단으로 조정 (반지름 만큼 오프셋)
                     pin.position.y -= pin.userData.halfHeight; 
                     pin.quaternion.copy(pinBodies[i].quaternion);
                     if (pin.userData.dialogueEl.style.display === 'block') {
                         const vector = pin.position.clone();
-                        vector.y += (pin.userData.halfHeight * 3); // 크기에 맞춰 대사창 높이 조정
+                        vector.y += (pin.userData.halfHeight * 3);
                         vector.project(camera);
                         const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
                         const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
