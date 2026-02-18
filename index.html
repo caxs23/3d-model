@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>간호부 볼링대회</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #000; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; color: white; }
+        
+        /* Start Screen */
+        #start-screen { 
+            position: absolute; width: 100%; height: 100%; background: rgba(0,0,0,0.85); 
+            display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            pointer-events: auto; text-align: center;
+        }
+        .title { font-size: 3rem; font-weight: bold; color: #ff4757; margin-bottom: 20px; text-shadow: 0 0 10px rgba(255,71,87,0.5); }
+        .instructions { font-size: 1.1rem; line-height: 1.6; margin-bottom: 40px; color: #ced4da; }
+        .btn { 
+            padding: 15px 40px; font-size: 1.5rem; background: #2ed573; border: none; 
+            border-radius: 50px; color: white; cursor: pointer; transition: transform 0.2s; 
+            box-shadow: 0 4px 15px rgba(46,213,115,0.4);
+        }
+        .btn:active { transform: scale(0.95); }
+
+        /* Game UI */
+        #score-board { 
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%); 
+            background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 15px; border: 2px solid #ffffff33;
+            display: flex; gap: 20px; font-size: 1.2rem;
+        }
+        #message-box { 
+            position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); 
+            font-size: 4rem; font-weight: 900; color: #eccc68; text-shadow: 2px 2px 10px rgba(0,0,0,0.5);
+            opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        }
+
+        /* Pin Dialogues */
+        .dialogue {
+            position: absolute; padding: 5px 10px; background: white; color: black;
+            border-radius: 10px; font-size: 0.8rem; font-weight: bold; pointer-events: none;
+            transform: translate(-50%, -100%); display: none;
+        }
+        .dialogue:after {
+            content: ''; position: absolute; bottom: -5px; left: 50%; margin-left: -5px;
+            width: 0; height: 0; border-top: 5px solid white; border-left: 5px solid transparent; border-right: 5px solid transparent;
+        }
+
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <!-- Start Screen -->
+        <div id="start-screen">
+            <div class="title">💉 간호부 볼링대회</div>
+            <div class="instructions">
+                화면을 <strong>위로 빠르게 스와이프</strong>하여<br>
+                볼링공을 굴리세요!<br><br>
+                3번의 기회 동안 최대한 많은<br>
+                간호사 핀을 쓰러뜨리세요.
+            </div>
+            <button class="btn" onclick="startGame()">경기 시작!</button>
+        </div>
+
+        <!-- In-game Score -->
+        <div id="score-board" style="display: none;">
+            <div>프레임: <span id="frame-num">1</span>/3</div>
+            <div>점수: <span id="total-score">0</span></div>
+        </div>
+
+        <div id="message-box">STRIKE!</div>
+    </div>
+
+    <script>
+        // --- Constants & Variables ---
+        const ASSETS = {
+            obj: 'https://raw.githubusercontent.com/caxs23/3d-model/main/base.obj',
+            diffuse: 'https://raw.githubusercontent.com/caxs23/3d-model/main/texture_diffuse.png',
+            pbr: 'https://raw.githubusercontent.com/caxs23/3d-model/main/texture_pbr.png'
+        };
+
+        const DIALOGUES = ["으악!", "살려주세요", "억", "아이고", "퇴근하고 싶어", "선생님!", "꺅"];
+
+        let scene, camera, renderer, world;
+        let ball, ballBody, pins = [], pinBodies = [];
+        let isThrowing = false;
+        let frameCount = 1;
+        let totalScore = 0;
+        let gameActive = false;
+
+        let swipeStart = { y: 0, time: 0 };
+
+        // --- Initialization ---
+        function init() {
+            // Three.js Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 4, 12);
+            camera.lookAt(0, 0, -5);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Cannon.js Physics
+            world = new CANNON.World();
+            world.gravity.set(0, -9.82, 0);
+
+            createLights();
+            createEnvironment();
+            createBall();
+            loadPinModel();
+
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('touchstart', onTouchStart);
+            document.addEventListener('touchend', onTouchEnd);
+        }
+
+        function createLights() {
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambient);
+
+            const sun = new THREE.DirectionalLight(0xffffff, 1);
+            sun.position.set(5, 15, 5);
+            sun.castShadow = true;
+            sun.shadow.camera.left = -10;
+            sun.shadow.camera.right = 10;
+            sun.shadow.camera.top = 10;
+            sun.shadow.camera.bottom = -10;
+            scene.add(sun);
+        }
+
+        function createEnvironment() {
+            // Lane
+            const laneGeo = new THREE.BoxGeometry(4, 0.2, 30);
+            const laneMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.1 });
+            const lane = new THREE.Mesh(laneGeo, laneMat);
+            lane.position.y = -0.1;
+            lane.position.z = -10;
+            lane.receiveShadow = true;
+            scene.add(lane);
+
+            const groundBody = new CANNON.Body({
+                mass: 0,
+                shape: new CANNON.Box(new CANNON.Vec3(2, 0.1, 15))
+            });
+            groundBody.position.set(0, -0.1, -10);
+            world.addBody(groundBody);
+
+            // Side Walls
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 30), wallMat);
+            wallL.position.set(-2.25, 0.3, -10);
+            scene.add(wallL);
+
+            const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 30), wallMat);
+            wallR.position.set(2.25, 0.3, -10);
+            scene.add(wallR);
+        }
+
+        function createBall() {
+            const ballRadius = 0.4;
+            const ballGeo = new THREE.SphereGeometry(ballRadius, 32, 32);
+            const ballMat = new THREE.MeshStandardMaterial({ 
+                color: 0xff4757, 
+                metalness: 0.7, 
+                roughness: 0.2 
+            });
+            ball = new THREE.Mesh(ballGeo, ballMat);
+            ball.castShadow = true;
+            scene.add(ball);
+
+            const shape = new CANNON.Sphere(ballRadius);
+            ballBody = new CANNON.Body({ mass: 5, shape: shape });
+            ballBody.position.set(0, 0.5, 5);
+            world.addBody(ballBody);
+            
+            resetBall();
+        }
+
+        function loadPinModel() {
+            const loader = new THREE.OBJLoader();
+            const texLoader = new THREE.TextureLoader();
+            const diffuse = texLoader.load(ASSETS.diffuse);
+            const pbr = texLoader.load(ASSETS.pbr);
+
+            const pinMaterial = new THREE.MeshStandardMaterial({
+                map: diffuse,
+                roughnessMap: pbr,
+                metalness: 0.5
+            });
+
+            loader.load(ASSETS.obj, (obj) => {
+                obj.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = pinMaterial;
+                        child.castShadow = true;
+                    }
+                });
+                
+                // Pin positions (Triangle formation)
+                const spacing = 0.7;
+                const offsetZ = -18;
+                const rows = 4;
+                let count = 0;
+
+                for (let i = 0; i < rows; i++) {
+                    for (let j = 0; j <= i; j++) {
+                        const pinInstance = obj.clone();
+                        const x = (j - i * 0.5) * spacing;
+                        const z = offsetZ - i * spacing;
+                        
+                        pinInstance.position.set(x, 0, z);
+                        pinInstance.scale.set(0.4, 0.4, 0.4); // Scale to fit bowling size
+                        scene.add(pinInstance);
+                        pins.push(pinInstance);
+
+                        // Physics for Pin
+                        const pinBody = new CANNON.Body({
+                            mass: 1.5,
+                            shape: new CANNON.Box(new CANNON.Vec3(0.2, 0.8, 0.2))
+                        });
+                        pinBody.position.set(x, 0.8, z);
+                        world.addBody(pinBody);
+                        pinBodies.push(pinBody);
+
+                        // Dialogue element
+                        const el = document.createElement('div');
+                        el.className = 'dialogue';
+                        el.id = `pin-dialogue-${count}`;
+                        document.body.appendChild(el);
+                        pinInstance.userData.dialogueEl = el;
+                        pinInstance.userData.isHit = false;
+
+                        count++;
+                    }
+                }
+            });
+        }
+
+        // --- Game Logic ---
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('score-board').style.display = 'flex';
+            gameActive = true;
+        }
+
+        function onTouchStart(e) {
+            if (!gameActive || isThrowing) return;
+            swipeStart.y = e.touches[0].clientY;
+            swipeStart.time = Date.now();
+        }
+
+        function onTouchEnd(e) {
+            if (!gameActive || isThrowing) return;
+            const deltaY = swipeStart.y - e.changedTouches[0].clientY;
+            const deltaTime = Date.now() - swipeStart.time;
+
+            if (deltaY > 50 && deltaTime < 300) {
+                const speed = Math.min(deltaY / deltaTime * 10, 35);
+                throwBall(speed);
+            }
+        }
+
+        function throwBall(speed) {
+            isThrowing = true;
+            ballBody.velocity.set(0, 0, -speed);
+            ballBody.angularVelocity.set(-speed, 0, 0);
+
+            // Wait for result
+            setTimeout(checkResult, 4000);
+        }
+
+        function checkResult() {
+            let hitCount = 0;
+            pins.forEach((pin, idx) => {
+                const body = pinBodies[idx];
+                // Check if pin is tilted (fallen)
+                const up = new CANNON.Vec3(0, 1, 0);
+                const pinUp = body.quaternion.vmult(new CANNON.Vec3(0, 1, 0));
+                const dot = up.dot(pinUp);
+
+                if (dot < 0.8 && !pin.userData.isHit) {
+                    hitCount++;
+                    pin.userData.isHit = true;
+                    showDialogue(pin);
+                }
+            });
+
+            totalScore += hitCount;
+            document.getElementById('total-score').innerText = totalScore;
+
+            if (hitCount >= 10) showMessage("STRIKE!");
+            else if (hitCount > 0) showMessage(`${hitCount} PINS!`);
+            else showMessage("GUTTER...");
+
+            setTimeout(() => {
+                if (frameCount < 3) {
+                    frameCount++;
+                    document.getElementById('frame-num').innerText = frameCount;
+                    resetBall();
+                    isThrowing = false;
+                } else {
+                    endGame();
+                }
+            }, 2000);
+        }
+
+        function showDialogue(pin) {
+            const el = pin.userData.dialogueEl;
+            el.innerText = DIALOGUES[Math.floor(Math.random() * DIALOGUES.length)];
+            el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 1500);
+        }
+
+        function showMessage(txt) {
+            const msg = document.getElementById('message-box');
+            msg.innerText = txt;
+            msg.style.opacity = '1';
+            setTimeout(() => msg.style.opacity = '0', 2000);
+        }
+
+        function resetBall() {
+            ballBody.position.set(0, 0.5, 5);
+            ballBody.velocity.set(0,0,0);
+            ballBody.angularVelocity.set(0,0,0);
+            camera.position.set(0, 4, 12);
+        }
+
+        function endGame() {
+            gameActive = false;
+            document.getElementById('start-screen').style.display = 'flex';
+            document.querySelector('.title').innerText = "경기 종료!";
+            document.querySelector('.instructions').innerHTML = `최종 점수: <strong>${totalScore}점</strong><br>고생하셨습니다, 간호사님!`;
+            document.querySelector('.btn').innerText = "다시 하기";
+            
+            // Reset state
+            frameCount = 1;
+            totalScore = 0;
+            pins.forEach(p => p.userData.isHit = false);
+            pinBodies.forEach((b, i) => {
+                const spacing = 0.7;
+                const offsetZ = -18;
+                const rows = 4;
+                // Simplified reset to initial formation
+                b.velocity.set(0,0,0);
+                b.angularVelocity.set(0,0,0);
+                b.quaternion.set(0,0,0,1);
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (gameActive) {
+                world.step(1/60);
+
+                // Sync Ball
+                ball.position.copy(ballBody.position);
+                ball.quaternion.copy(ballBody.quaternion);
+
+                // Camera Follow
+                if (isThrowing && ball.position.z > -15) {
+                    camera.position.z = ball.position.z + 5;
+                    camera.position.y = Math.max(2, ball.position.y + 2);
+                    camera.lookAt(ball.position.x, 0, ball.position.z - 5);
+                }
+
+                // Sync Pins & Dialogues
+                pins.forEach((pin, i) => {
+                    pin.position.copy(pinBodies[i].position);
+                    pin.quaternion.copy(pinBodies[i].quaternion);
+
+                    // Dialogue UI position sync
+                    if (pin.userData.dialogueEl.style.display === 'block') {
+                        const vector = pin.position.clone();
+                        vector.y += 1.5;
+                        vector.project(camera);
+                        const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                        const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+                        pin.userData.dialogueEl.style.left = `${x}px`;
+                        pin.userData.dialogueEl.style.top = `${y}px`;
+                    }
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            init();
+            animate();
+        };
+    </script>
+</body>
+</html>
