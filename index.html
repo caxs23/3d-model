@@ -236,13 +236,11 @@
                         scene.add(pinInstance);
                         pins.push(pinInstance);
 
-                        // 핀의 질량을 2.0에서 0.8로 줄여 더 가볍게 잘 넘어지도록 수정
                         const pinBody = new CANNON.Body({
                             mass: 0.8, 
                             shape: new CANNON.Box(new CANNON.Vec3(0.3, 1.2, 0.3))
                         });
                         pinBody.position.set(x, 1.2, z);
-                        // 마찰력을 조절하여 더 잘 미끄러지게 할 수 있음
                         pinBody.material = new CANNON.Material({ friction: 0.1 });
                         world.addBody(pinBody);
                         pinBodies.push(pinBody);
@@ -357,7 +355,7 @@
             ballBody.velocity.set(0,0,0);
             ballBody.angularVelocity.set(0,0,0);
             ballBody.quaternion.set(0,0,0,1);
-            resetCamera(); // 확실하게 카메라 리셋 호출
+            resetCamera();
         }
 
         function endGame() {
@@ -394,14 +392,21 @@
                 ball.position.copy(ballBody.position);
                 ball.quaternion.copy(ballBody.quaternion);
 
-                // 투구 중일 때만 카메라가 공을 따라가도록 설정
-                if (isThrowing && ball.position.z > -25) {
-                    const targetZ = ball.position.z + 6;
-                    const targetX = ball.position.x * 0.5;
-                    // 부드러운 카메라 이동
-                    camera.position.z += (targetZ - camera.position.z) * 0.1;
-                    camera.position.x += (targetX - camera.position.x) * 0.1;
-                    camera.lookAt(ball.position.x, 1, ball.position.z - 5);
+                // 카메라 제어 로직 수정
+                if (isThrowing) {
+                    // 공이 핀 근처(z = -15)에 도달하기 전까지는 공을 따라감
+                    if (ball.position.z > -15) {
+                        const targetZ = ball.position.z + 6;
+                        const targetX = ball.position.x * 0.5;
+                        camera.position.z += (targetZ - camera.position.z) * 0.1;
+                        camera.position.x += (targetX - camera.position.x) * 0.1;
+                        camera.lookAt(ball.position.x, 1, ball.position.z - 5);
+                    } else {
+                        // 공이 핀 구역에 들어오면 카메라 위치를 고정하고 핀이 넘어지는 것을 잘 볼 수 있도록 시점 고정
+                        const finalCamPos = new THREE.Vector3(0, 3, -13);
+                        camera.position.lerp(finalCamPos, 0.05);
+                        camera.lookAt(0, 0.5, -23); // 핀들이 위치한 평균 지점 응시
+                    }
                 }
 
                 pins.forEach((pin, i) => {
