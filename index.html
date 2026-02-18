@@ -19,11 +19,14 @@
         }
         .title { font-size: 3rem; font-weight: bold; color: #ff4757; margin-bottom: 20px; text-shadow: 0 0 10px rgba(255,71,87,0.2); }
         .instructions { font-size: 1.1rem; line-height: 1.6; margin-bottom: 40px; color: #444; }
+        .btn-group { display: flex; flex-direction: column; gap: 15px; align-items: center; }
         .btn { 
             padding: 15px 40px; font-size: 1.5rem; background: #2ed573; border: none; 
             border-radius: 50px; color: white; cursor: pointer; transition: transform 0.2s, background 0.2s; 
             box-shadow: 0 4px 15px rgba(46,213,115,0.4); pointer-events: auto;
+            min-width: 280px;
         }
+        .btn.secondary { background: #747d8c; box-shadow: 0 4px 15px rgba(116,125,140,0.4); font-size: 1.2rem; }
         .btn:active { transform: scale(0.95); }
 
         /* 오프닝 컨테이너 - 높이 부담 줄임 */
@@ -34,7 +37,7 @@
         .opening-scene {
             position: absolute; width: 100%; height: 100%; opacity: 0;
             transition: opacity 1s ease-in-out;
-            background-size: contain; /* 위아래 꽉 차지 않게 조절 */
+            background-size: contain; 
             background-repeat: no-repeat;
             background-position: center;
             display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
@@ -96,7 +99,10 @@
                 총 3프레임 동안 경기가 진행됩니다.<br>
                 각 프레임당 2번의 투구 기회가 주어집니다.
             </div>
-            <button class="btn" onclick="startOpening()">경기 시작!</button>
+            <div class="btn-group">
+                <button class="btn" onclick="startOpening()">경기 시작 (오프닝 보기)</button>
+                <button class="btn secondary" onclick="startGameDirectly()">컷신 없이 바로 시작</button>
+            </div>
         </div>
 
         <!-- 오프닝 컨테이너 -->
@@ -160,7 +166,6 @@
         let swipeStart = { x: 0, y: 0, time: 0 };
         let isMouseDown = false;
 
-        // Audio setup
         const strikeSound = new Audio(ASSETS.strikeSound);
         const throwSound = new Audio(ASSETS.throwSound);
 
@@ -171,6 +176,7 @@
         function startOpening() {
             document.getElementById('start-screen').style.display = 'none';
             document.getElementById('opening-container').style.display = 'block';
+            currentOpeningScene = 0; 
             nextOpeningScene();
         }
 
@@ -178,16 +184,13 @@
             currentOpeningScene++;
             
             if (currentOpeningScene <= totalOpeningScenes) {
-                // 이전 씬 끄기
                 if (currentOpeningScene > 1) {
                     document.getElementById(`scene-${currentOpeningScene - 1}`).classList.remove('active');
                 }
                 
-                // 현재 씬 켜기
                 const activeScene = document.getElementById(`scene-${currentOpeningScene}`);
                 activeScene.classList.add('active');
                 
-                // 마지막 씬이면 버튼 텍스트 변경 또는 계속 버튼 노출
                 const nextBtn = document.getElementById('opening-next-btn');
                 nextBtn.style.display = 'block';
                 
@@ -197,12 +200,19 @@
                     nextBtn.innerText = "계속";
                 }
             } else {
-                // 게임 시작
                 finishOpening();
             }
         }
 
         function finishOpening() {
+            document.getElementById('opening-container').style.display = 'none';
+            document.getElementById('score-board').style.display = 'flex';
+            gameActive = true;
+            resetFullPins();
+        }
+
+        function startGameDirectly() {
+            document.getElementById('start-screen').style.display = 'none';
             document.getElementById('opening-container').style.display = 'none';
             document.getElementById('score-board').style.display = 'flex';
             gameActive = true;
@@ -466,18 +476,16 @@
             document.getElementById('start-screen').style.display = 'flex';
             document.querySelector('.title').innerText = "대회 종료!";
             document.querySelector('.instructions').innerHTML = `최종 점수: <strong>${totalScore}점</strong><br>수고하셨습니다!`;
-            document.querySelector('.btn').innerText = "다시 도전";
-            // 리셋 시 오프닝 재시작 안 함
-            document.querySelector('.btn').onclick = startGameDirectly;
+            
+            // 버튼들 초기 상태로 복구
+            const btnGroup = document.querySelector('.btn-group');
+            btnGroup.innerHTML = `
+                <button class="btn" onclick="startOpening()">다시 하기 (오프닝 포함)</button>
+                <button class="btn secondary" onclick="startGameDirectly()">컷신 없이 바로 시작</button>
+            `;
+            
             frameCount = 1; shotCount = 1; totalScore = 0;
             updateUI(); resetFullPins(); resetBall();
-        }
-
-        function startGameDirectly() {
-            document.getElementById('start-screen').style.display = 'none';
-            document.getElementById('score-board').style.display = 'flex';
-            gameActive = true;
-            resetFullPins();
         }
 
         function onWindowResize() {
