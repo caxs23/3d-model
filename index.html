@@ -51,7 +51,7 @@
             width: 0; height: 0; border-top: 5px solid white; border-left: 5px solid transparent; border-right: 5px solid transparent;
         }
 
-        canvas { display: block; }
+        canvas { display: block; cursor: crosshair; }
     </style>
 </head>
 <body>
@@ -62,7 +62,7 @@
             <div class="title">💉 간호부 볼링대회</div>
             <div class="instructions">
                 화면을 <strong>원하는 방향으로 빠르게 스와이프</strong>하여<br>
-                볼링공을 굴리세요!<br><br>
+                볼링공을 굴리세요! (마우스/터치 모두 가능)<br><br>
                 3번의 기회 동안 최대한 많은<br>
                 간호사 핀을 쓰러뜨리세요.
             </div>
@@ -96,12 +96,13 @@
         let gameActive = false;
 
         let swipeStart = { x: 0, y: 0, time: 0 };
+        let isMouseDown = false;
 
         // --- Initialization ---
         function init() {
             // Three.js Scene
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xe0e6ed); // 밝은 배경
+            scene.background = new THREE.Color(0xe0e6ed); 
             scene.fog = new THREE.Fog(0xe0e6ed, 20, 60);
 
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -123,8 +124,14 @@
             loadPinModel();
 
             window.addEventListener('resize', onWindowResize);
+            
+            // Touch Events
             document.addEventListener('touchstart', onTouchStart);
             document.addEventListener('touchend', onTouchEnd);
+
+            // Mouse Events
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
         }
 
         function createLights() {
@@ -163,7 +170,7 @@
             groundBody.position.set(0, -0.1, -15);
             world.addBody(groundBody);
 
-            // Side Walls (Bright)
+            // Side Walls
             const wallMat = new THREE.MeshStandardMaterial({ color: 0xced4da });
             const wallL = new THREE.Mesh(new THREE.BoxGeometry(1, 1.5, 40), wallMat);
             wallL.position.set(-3.5, 0.5, -15);
@@ -175,7 +182,7 @@
         }
 
         function createBall() {
-            const ballRadius = 0.5; // 공 크기 약간 확대
+            const ballRadius = 0.5;
             const ballGeo = new THREE.SphereGeometry(ballRadius, 32, 32);
             const ballMat = new THREE.MeshStandardMaterial({ 
                 color: 0xff4757, 
@@ -188,7 +195,8 @@
 
             const shape = new CANNON.Sphere(ballRadius);
             ballBody = new CANNON.Body({ mass: 6, shape: shape });
-            ballBody.position.set(0, 0.6, 6);
+            // 공이 시작 위치를 레인 위(z = 4)로 당겨서 허공 추락 방지
+            ballBody.position.set(0, 0.5, 4);
             world.addBody(ballBody);
             
             resetBall();
@@ -214,8 +222,7 @@
                     }
                 });
                 
-                // Pin positions
-                const spacing = 1.0; // 핀 간격 확대
+                const spacing = 1.0;
                 const offsetZ = -22;
                 const rows = 4;
                 let count = 0;
@@ -227,12 +234,10 @@
                         const z = offsetZ - i * spacing;
                         
                         pinInstance.position.set(x, 0, z);
-                        // 시각적 크기 확대 (기존 0.4 -> 0.7)
                         pinInstance.scale.set(0.7, 0.7, 0.7); 
                         scene.add(pinInstance);
                         pins.push(pinInstance);
 
-                        // 물리 엔진용 히트박스는 밸런스를 위해 적당히 설정
                         const pinBody = new CANNON.Body({
                             mass: 2.0,
                             shape: new CANNON.Box(new CANNON.Vec3(0.3, 1.2, 0.3))
@@ -241,7 +246,6 @@
                         world.addBody(pinBody);
                         pinBodies.push(pinBody);
 
-                        // Dialogue element
                         const el = document.createElement('div');
                         el.className = 'dialogue';
                         el.id = `pin-dialogue-${count}`;
@@ -255,41 +259,47 @@
             });
         }
 
-        // --- Game Logic ---
+        // --- Interaction Logic ---
         function startGame() {
             document.getElementById('start-screen').style.display = 'none';
             document.getElementById('score-board').style.display = 'flex';
             gameActive = true;
         }
 
-        function onTouchStart(e) {
+        // Generic Start Handler
+        function startAction(x, y) {
             if (!gameActive || isThrowing) return;
-            swipeStart.x = e.touches[0].clientX;
-            swipeStart.y = e.touches[0].clientY;
+            swipeStart.x = x;
+            swipeStart.y = y;
             swipeStart.time = Date.now();
         }
 
-        function onTouchEnd(e) {
+        // Generic End Handler
+        function endAction(x, y) {
             if (!gameActive || isThrowing) return;
-            const deltaX = e.changedTouches[0].clientX - swipeStart.x;
-            const deltaY = swipeStart.y - e.changedTouches[0].clientY;
+            const deltaX = x - swipeStart.x;
+            const deltaY = swipeStart.y - y;
             const deltaTime = Date.now() - swipeStart.time;
 
-            // 스와이프 감지 (최소 50px 이상)
             if (deltaY > 50 && deltaTime < 400) {
                 const speedZ = Math.min(deltaY / deltaTime * 12, 40);
-                const speedX = (deltaX / deltaTime) * 5; // 좌우 굴절 속도 계산
+                const speedX = (deltaX / deltaTime) * 5; 
                 throwBall(speedX, speedZ);
             }
         }
 
+        // Touch Listeners
+        function onTouchStart(e) { startAction(e.touches[0].clientX, e.touches[0].clientY); }
+        function onTouchEnd(e) { endAction(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }
+
+        // Mouse Listeners
+        function onMouseDown(e) { isMouseDown = true; startAction(e.clientX, e.clientY); }
+        function onMouseUp(e) { if(isMouseDown) { isMouseDown = false; endAction(e.clientX, e.clientY); } }
+
         function throwBall(speedX, speedZ) {
             isThrowing = true;
             ballBody.velocity.set(speedX, 0, -speedZ);
-            // 회전력 추가 (방향에 따른 자연스러운 굴림)
             ballBody.angularVelocity.set(-speedZ, 0, -speedX);
-
-            // 카메라가 공을 따라가기 시작하도록 함
             setTimeout(checkResult, 4500);
         }
 
@@ -301,7 +311,6 @@
                 const pinUp = body.quaternion.vmult(new CANNON.Vec3(0, 1, 0));
                 const dot = up.dot(pinUp);
 
-                // 핀이 기울어지면 쓰러진 것으로 판단
                 if (dot < 0.75 && !pin.userData.isHit) {
                     hitCount++;
                     pin.userData.isHit = true;
@@ -343,7 +352,8 @@
         }
 
         function resetBall() {
-            ballBody.position.set(0, 0.6, 6);
+            // 초기 위치를 레인 안쪽인 z = 4로 설정
+            ballBody.position.set(0, 0.5, 4);
             ballBody.velocity.set(0,0,0);
             ballBody.angularVelocity.set(0,0,0);
             ballBody.quaternion.set(0,0,0,1);
@@ -357,15 +367,10 @@
             document.querySelector('.instructions').innerHTML = `최종 점수: <strong>${totalScore}점</strong><br>오늘의 MVP 간호사님입니다!`;
             document.querySelector('.btn').innerText = "다시 도전";
             
-            // 물리 및 점수 리셋
             frameCount = 1;
             totalScore = 0;
             pins.forEach(p => p.userData.isHit = false);
-            pinBodies.forEach((b, i) => {
-                const spacing = 1.0;
-                const offsetZ = -22;
-                const rows = 4;
-                // 리셋 시 위치 재조정 로직 (단순화를 위해 처음 위치로)
+            pinBodies.forEach((b) => {
                 b.velocity.set(0,0,0);
                 b.angularVelocity.set(0,0,0);
                 b.quaternion.set(0,0,0,1);
@@ -385,11 +390,9 @@
             if (gameActive) {
                 world.step(1/60);
 
-                // Ball Sync
                 ball.position.copy(ballBody.position);
                 ball.quaternion.copy(ballBody.quaternion);
 
-                // Camera Follow (Smooth follow)
                 if (isThrowing && ball.position.z > -25) {
                     const targetZ = ball.position.z + 6;
                     const targetX = ball.position.x * 0.5;
@@ -398,14 +401,13 @@
                     camera.lookAt(ball.position.x, 1, ball.position.z - 5);
                 }
 
-                // Pins & Dialogues Sync
                 pins.forEach((pin, i) => {
                     pin.position.copy(pinBodies[i].position);
                     pin.quaternion.copy(pinBodies[i].quaternion);
 
                     if (pin.userData.dialogueEl.style.display === 'block') {
                         const vector = pin.position.clone();
-                        vector.y += 2.0; // 말풍선 높이 조절
+                        vector.y += 2.0; 
                         vector.project(camera);
                         const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
                         const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
